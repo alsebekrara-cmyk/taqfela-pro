@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="theme-color" content="#6366f1">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <title>تقفيلة الكاشير</title>
+    <link rel="manifest" href="manifest.json">
+    <link rel="icon" type="image/png" sizes="192x192" href="icon-192x192.png">
+    <link rel="icon" type="image/png" sizes="96x96" href="icon-96x96.png">
+    <link rel="apple-touch-icon" sizes="152x152" href="icon-152x152.png">
+    <link rel="apple-touch-icon" sizes="192x192" href="icon-192x192.png">
+    <link rel="apple-touch-icon" sizes="512x512" href="icon-512x512.png">
+    <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@300;400;500;700;800;900&display=swap" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/remixicon@4.1.0/fonts/remixicon.css" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <!-- LOGIN OVERLAY -->
+    <div id="loginOverlay" class="login-overlay">
+        <div class="login-container">
+            <div class="login-icon"><i class="ri-shield-keyhole-fill"></i></div>
+            <h2 class="login-title">تسجيل دخول الكاشير</h2>
+            <p class="login-subtitle">أدخل بيانات حسابك للمتابعة</p>
+            <div class="field"><label>اسم المستخدم</label><input type="text" id="loginUser" class="input-field" autocomplete="username"></div>
+            <div class="field"><label>كلمة المرور</label><input type="password" id="loginPass" class="input-field" autocomplete="current-password"></div>
+            <button class="btn btn-primary btn-block" id="loginBtn" style="margin-top:8px"><i class="ri-login-box-line"></i> دخول</button>
+            <div id="loginError" style="color:#ef4444;font-size:.82rem;text-align:center;margin-top:8px;display:none"></div>
+            <div id="loginOffline" style="color:#f59e0b;font-size:.78rem;text-align:center;margin-top:6px;display:none"><i class="ri-wifi-off-line"></i> لا يوجد اتصال - يرجى الاتصال بالإنترنت</div>
+        </div>
+    </div>
+
+    <!-- CASHIER SELECT -->
+    <div id="cashierSelect" class="cashier-select hidden">
+        <div class="select-container">
+            <div class="select-icon"><i class="ri-store-2-fill"></i></div>
+            <h2>اختر الكاشير</h2>
+            <p class="select-sub">اختر الكاشير الخاص بك للبدء</p>
+            <div class="cashier-options">
+                <button class="cashier-option" data-key="men" onclick="selectCashier('men')">
+                    <i class="ri-men-line"></i>
+                    <span>كاشير الرجال</span>
+                </button>
+                <button class="cashier-option" data-key="women" onclick="selectCashier('women')">
+                    <i class="ri-women-line"></i>
+                    <span>كاشير النساء</span>
+                </button>
+                <button class="cashier-option" data-key="cosmetics" onclick="selectCashier('cosmetics')">
+                    <i class="ri-sparkling-line"></i>
+                    <span>كاشير التجميل</span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- MAIN APP -->
+    <div id="app" class="hidden">
+        <header class="topbar">
+            <div class="topbar-r">
+                <button id="backBtn" class="topbar-btn" onclick="goBack()" title="تسجيل خروج"><i class="ri-logout-box-r-line"></i></button>
+                <span class="topbar-title" id="topbarTitle">تقفيلة الكاشير</span>
+            </div>
+            <div class="topbar-l">
+                <span id="syncStatus" class="sync-badge offline"><i class="ri-wifi-off-line"></i></span>
+                <span class="topbar-date" id="topbarDate"></span>
+            </div>
+        </header>
+
+        <main class="main">
+            <!-- HOME -->
+            <section id="page-home" class="page active">
+                <div class="cashier-identity" id="cashierIdentity">
+                    <div class="ci-icon" id="ciIcon"><i class="ri-men-line"></i></div>
+                    <div class="ci-name" id="ciName">كاشير الرجال</div>
+                    <div class="ci-date" id="ciDate"></div>
+                </div>
+
+                <button class="btn btn-primary btn-block btn-lg" id="newClosingBtn" onclick="startWizard()">
+                    <i class="ri-calculator-line"></i> تقفيلة جديدة
+                </button>
+
+                <div class="pending-banner" id="pendingBanner" style="display:none">
+                    <i class="ri-cloud-off-line"></i>
+                    <span id="pendingCount">0</span> تقفيلات بانتظار المزامنة
+                    <button class="btn btn-warning btn-sm" onclick="syncPending()"><i class="ri-refresh-line"></i> مزامنة</button>
+                </div>
+
+                <h3 class="sub-title"><i class="ri-history-line"></i> التقفيلات السابقة</h3>
+                <div id="closingsList" class="records-list"></div>
+            </section>
+
+            <!-- WIZARD -->
+            <div id="wizardOverlay" class="wizard-overlay hidden">
+                <div class="wizard-container">
+                    <div class="wizard-topbar">
+                        <button id="wizardClose" class="wiz-close" onclick="closeWizard()"><i class="ri-close-line"></i></button>
+                        <span class="wiz-title" id="wizTitle">تقفيلة جديدة</span>
+                        <span class="wiz-progress" id="wizProgress">1/9</span>
+                    </div>
+                    <div class="wizard-progress-bar"><div class="wizard-progress-fill" id="wizProgressFill"></div></div>
+                    <div class="wizard-body" id="wizBody"></div>
+                    <div class="wizard-footer">
+                        <button class="btn btn-ghost" id="wizBack" onclick="wizPrev()"><i class="ri-arrow-right-line"></i> السابق</button>
+                        <button class="btn btn-primary" id="wizNext" onclick="wizNext()">التالي <i class="ri-arrow-left-line"></i></button>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- TOAST -->
+    <div id="toast" class="toast hidden"></div>
+
+    <!-- Firebase SDK -->
+    <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
+    <script src="app.js"></script>
+</body>
+</html>

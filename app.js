@@ -1,0 +1,617 @@
+/* ========= Firebase Config ========= */
+const firebaseConfig = {
+    apiKey: "AIzaSyBF3_iG2b8gYz-qoz4rQV95MrlWQHNPu98",
+    authDomain: "taqfela-pro.firebaseapp.com",
+    databaseURL: "https://taqfela-pro-default-rtdb.firebaseio.com",
+    projectId: "taqfela-pro",
+    storageBucket: "taqfela-pro.firebasestorage.app",
+    messagingSenderId: "1058350153841",
+    appId: "1:1058350153841:web:baeb3fafd8f224ff145bd0",
+    measurementId: "G-3TH5EWJ2SV"
+};
+firebase.initializeApp(firebaseConfig);
+const db = firebase.database();
+
+/* ========= Helpers ========= */
+const $ = s => document.querySelector(s);
+const $$ = s => document.querySelectorAll(s);
+const fmtNum = n => Number(n||0).toLocaleString('en-US');
+const today = () => new Date().toISOString().slice(0,10);
+const uid = () => Date.now().toString(36)+Math.random().toString(36).slice(2,6);
+const parseK = v => (parseFloat(v)||0)*1000;
+const toK = v => (v||0)/1000;
+
+function toast(msg){
+    const t=$('#toast');t.textContent=msg;t.classList.remove('hidden');
+    setTimeout(()=>t.classList.add('hidden'),2200);
+}
+
+/* ========= AUTH ========= */
+const AUTH_SESSION_KEY = 'cashier_sub_session';
+
+async function hashPwd(pwd){
+    const data=new TextEncoder().encode(pwd);
+    const buf=await crypto.subtle.digest('SHA-256',data);
+    return Array.from(new Uint8Array(buf)).map(b=>b.toString(16).padStart(2,'0')).join('');
+}
+
+function getAuthSession(){
+    try{return JSON.parse(localStorage.getItem(AUTH_SESSION_KEY))||null;}catch(e){return null;}
+}
+function setAuthSession(s){ localStorage.setItem(AUTH_SESSION_KEY,JSON.stringify(s)); }
+function clearAuthSession(){ localStorage.removeItem(AUTH_SESSION_KEY); }
+
+async function doLogin(){
+    const username=$('#loginUser').value.trim();
+    const password=$('#loginPass').value;
+    const errEl=$('#loginError');
+    errEl.style.display='none';
+    if(!username||!password){errEl.textContent='أدخل البيانات';errEl.style.display='block';return;}
+
+    try{
+        const snap = await db.ref('cashier_accounts').once('value');
+        const accounts = snap.val();
+        if(!accounts){errEl.textContent='لا توجد حسابات كاشير - تواصل مع المسؤول';errEl.style.display='block';return;}
+
+        const hash = await hashPwd(password);
+        let found = null;
+        Object.values(accounts).forEach(acc=>{
+            if(acc.username===username && acc.passwordHash===hash) found=acc;
+        });
+
+        if(!found){errEl.textContent='بيانات خاطئة';errEl.style.display='block';return;}
+
+        if(!found.cashierType || !CASHIERS[found.cashierType]){
+            errEl.textContent='لم يتم تعيين نوع كاشير لهذا الحساب';errEl.style.display='block';return;
+        }
+
+        setAuthSession({username:found.username,cashierType:found.cashierType});
+        $('#loginOverlay').classList.add('hidden');
+        autoSelectCashier(found.cashierType);
+    }catch(e){
+        console.error('Login error:',e);
+        errEl.textContent='خطأ في الاتصال - حاول مرة أخرى';errEl.style.display='block';
+    }
+}
+
+function autoSelectCashier(cashierType){
+    selectedCashier = CASHIERS[cashierType];
+    if(!selectedCashier) return;
+    localStorage.setItem(SELECTED_KEY, cashierType);
+    $('#cashierSelect').classList.add('hidden');
+    $('#app').classList.remove('hidden');
+    initApp();
+}
+
+function logoutCashier(){
+    clearAuthSession();
+    localStorage.removeItem(SELECTED_KEY);
+    selectedCashier = null;
+    $('#app').classList.add('hidden');
+    $('#cashierSelect').classList.add('hidden');
+    $('#loginOverlay').classList.remove('hidden');
+    $('#loginUser').value='';
+    $('#loginPass').value='';
+}
+
+/* ========= Local Storage ========= */
+const STORE_KEY = 'cashier_sub_closings';
+const PENDING_KEY = 'cashier_sub_pending';
+const SELECTED_KEY = 'cashier_sub_selected';
+
+function loadLocal(k){try{return JSON.parse(localStorage.getItem(k))||[];}catch(e){return [];}}
+function saveLocal(k,v){localStorage.setItem(k,JSON.stringify(v));}
+
+/* ========= Cashier Data ========= */
+const CASHIERS = {
+    men:   {key:'men',   label:'كاشير الرجال',  icon:'ri-men-line',      color:'#6366f1'},
+    women: {key:'women', label:'كاشير النساء',   icon:'ri-women-line',    color:'#ec4899'},
+    cosmetics:{key:'cosmetics',label:'كاشير التجميل',icon:'ri-sparkling-line',color:'#f59e0b'}
+};
+
+const FIELDS = [
+    {key:'sales',      label:'رصيد الكاشير',    icon:'ri-wallet-3-line',         type:'income'},
+    {key:'network',    label:'المبلغ المستلم',   icon:'ri-bank-card-line',        type:'income'},
+    {key:'returns',    label:'التخفيضات',        icon:'ri-arrow-go-back-line',    type:'deduct'},
+    {key:'expenses',   label:'المصاريف',         icon:'ri-money-dollar-box-line', type:'expense'},
+    {key:'lunch',      label:'الغداء',           icon:'ri-restaurant-line',       type:'expense'},
+    {key:'debts',      label:'الديون',           icon:'ri-file-list-3-line',      type:'debt'},
+    {key:'withdrawals',label:'السحوبات',         icon:'ri-hand-coin-line',        type:'withdraw'}
+];
+
+// Steps: manager + 7 fields + summary = 9
+const TOTAL_STEPS = FIELDS.length + 2;
+
+let selectedCashier = null;
+let wizData = {};
+let wizStep = 0;
+let isOnline = navigator.onLine;
+
+/* ========= Online/Offline Detection ========= */
+window.addEventListener('online', () => { isOnline = true; updateSyncUI(); syncPending(); });
+window.addEventListener('offline', () => { isOnline = false; updateSyncUI(); });
+
+function updateSyncUI(){
+    const badge = $('#syncStatus');
+    if(!badge) return;
+    if(isOnline){
+        badge.className = 'sync-badge online';
+        badge.innerHTML = '<i class="ri-wifi-line"></i>';
+    } else {
+        badge.className = 'sync-badge offline';
+        badge.innerHTML = '<i class="ri-wifi-off-line"></i>';
+    }
+    updatePendingBanner();
+}
+
+function updatePendingBanner(){
+    const pending = loadLocal(PENDING_KEY);
+    const banner = $('#pendingBanner');
+    if(!banner) return;
+    if(pending.length > 0){
+        banner.style.display = 'flex';
+        $('#pendingCount').textContent = pending.length;
+    } else {
+        banner.style.display = 'none';
+    }
+}
+
+/* ========= Cashier Selection ========= */
+function selectCashier(key){
+    selectedCashier = CASHIERS[key];
+    if(!selectedCashier) return;
+    localStorage.setItem(SELECTED_KEY, key);
+    $('#cashierSelect').classList.add('hidden');
+    $('#app').classList.remove('hidden');
+    initApp();
+}
+
+function goBack(){
+    logoutCashier();
+}
+
+/* ========= Init ========= */
+function initApp(){
+    if(!selectedCashier) return;
+    const c = selectedCashier;
+
+    // Set identity card
+    const identity = $('#cashierIdentity');
+    identity.setAttribute('data-key', c.key);
+    $('#ciIcon').innerHTML = `<i class="${c.icon}"></i>`;
+    $('#ciIcon').style.color = c.color;
+    $('#ciName').textContent = c.label;
+
+    // Date
+    const d = new Date();
+    const opts = {weekday:'long',year:'numeric',month:'long',day:'numeric'};
+    const dateStr = d.toLocaleDateString('ar-SA', opts);
+    $('#ciDate').textContent = dateStr;
+    $('#topbarDate').textContent = dateStr;
+    $('#topbarTitle').textContent = c.label;
+
+    updateSyncUI();
+    renderClosings();
+}
+
+/* ========= Render Closings ========= */
+function renderClosings(){
+    if(!selectedCashier) return;
+    const all = loadLocal(STORE_KEY);
+    const mine = all.filter(c => c.cashierKey === selectedCashier.key).sort((a,b) => (b.date||'').localeCompare(a.date||''));
+    const list = $('#closingsList');
+
+    if(!mine.length){
+        list.innerHTML = '<div class="empty-state"><i class="ri-inbox-line"></i><p>لا توجد تقفيلات بعد</p></div>';
+        return;
+    }
+
+    list.innerHTML = mine.map(c => {
+        const net = c.data.network || 0;
+        const clr = net >= 0 ? 'income' : 'expense';
+        const syncBadge = c.synced
+            ? '<span class="synced-badge yes"><i class="ri-check-line"></i> مزامن</span>'
+            : '<span class="synced-badge no"><i class="ri-time-line"></i> بانتظار</span>';
+        return `<div class="record-card">
+            <div class="rec-info">
+                <div class="rec-title">${c.date}${c.manager ? ' - '+c.manager : ''}</div>
+                <div class="rec-sub">${selectedCashier.label} ${syncBadge}</div>
+            </div>
+            <div class="rec-amount ${clr}">${fmtNum(net)}</div>
+        </div>`;
+    }).join('');
+}
+
+/* ========= Wizard ========= */
+function getStepInfo(step){
+    if(step === 0) return {type:'manager'};
+    const fi = step - 1;
+    if(fi >= FIELDS.length) return {type:'summary'};
+    return {type:'field', field:FIELDS[fi]};
+}
+
+function startWizard(){
+    wizData = {manager:'', fields:{}};
+    FIELDS.forEach(f => wizData.fields[f.key] = 0);
+    wizData.debtsList = [];
+    wizData.withdrawList = [];
+    wizData.expensesList = [];
+    wizStep = 0;
+    renderWizStep();
+    $('#wizardOverlay').classList.remove('hidden');
+    document.body.classList.add('wizard-open');
+}
+
+function closeWizard(){
+    if(!confirm('هل تريد الخروج من التقفيلة؟')) return;
+    $('#wizardOverlay').classList.add('hidden');
+    document.body.classList.remove('wizard-open');
+}
+
+function wizNext(){
+    saveCurrentStep();
+    if(wizStep === TOTAL_STEPS - 1){ saveClosing(); return; }
+    wizStep++;
+    renderWizStep();
+}
+
+function wizPrev(){
+    saveCurrentStep();
+    if(wizStep > 0){ wizStep--; renderWizStep(); }
+}
+
+function renderWizStep(){
+    const info = getStepInfo(wizStep);
+    $('#wizProgress').textContent = `${wizStep+1}/${TOTAL_STEPS}`;
+    $('#wizProgressFill').style.width = ((wizStep+1)/TOTAL_STEPS*100)+'%';
+    $('#wizBack').style.visibility = wizStep === 0 ? 'hidden' : 'visible';
+    const isLast = wizStep === TOTAL_STEPS - 1;
+    $('#wizNext').innerHTML = isLast ? '<i class="ri-save-line"></i> حفظ وإرسال' : 'التالي <i class="ri-arrow-left-line"></i>';
+
+    const body = $('#wizBody');
+    const c = selectedCashier;
+
+    if(info.type === 'manager'){
+        body.innerHTML = `
+        <div class="wiz-cashier-label" style="color:var(--primary)"><i class="ri-user-star-line"></i> المدير المسؤول</div>
+        <input type="text" class="wiz-input" id="wizInput" value="${wizData.manager||''}" placeholder="اسم المدير" style="font-size:1rem">
+        <p style="font-size:.8rem;color:var(--text3);margin-top:10px;text-align:center">أدخل اسم المدير المسؤول</p>`;
+        setTimeout(()=>{const inp=$('#wizInput');if(inp){inp.focus();}},100);
+        return;
+    }
+
+    if(info.type === 'summary'){
+        renderWizSummary(body);
+        return;
+    }
+
+    const {field} = info;
+    const fk = field.key;
+    let extra = '';
+    if(fk === 'debts') extra = buildDebtEntryUI();
+    else if(fk === 'withdrawals') extra = buildWithdrawEntryUI();
+    else if(fk === 'expenses') extra = buildExpenseEntryUI();
+
+    body.innerHTML = `
+    <div class="wiz-cashier-label" style="color:${c.color}"><i class="${c.icon}"></i> ${c.label}</div>
+    <div class="wiz-label"><i class="${field.icon}"></i> ${field.label} <span style="font-size:.75rem;color:var(--text3)">(بالآلاف)</span></div>
+    <input type="number" class="wiz-input" id="wizInput" inputmode="decimal" value="${toK(wizData.fields[fk])||''}" placeholder="0">
+    ${extra}`;
+    setTimeout(()=>{
+        const inp = $('#wizInput');
+        if(inp){
+            inp.focus();
+            inp.addEventListener('keydown', e=>{
+                if(e.key==='Enter'){e.preventDefault();$('#wizNext').click();}
+            });
+        }
+    },100);
+}
+
+/* ===== Debt Entry ===== */
+function buildDebtEntryUI(){
+    const list = wizData.debtsList || [];
+    let items = list.map((d,i)=>`<div class="debt-item"><span>${d.person}: ${fmtNum(d.amount)}</span><button onclick="removeWizDebt(${i})"><i class="ri-close-circle-line"></i></button></div>`).join('');
+    return `<div class="wiz-debt-entry"><h4><i class="ri-file-list-3-line"></i> تفاصيل الديون</h4>
+    <input type="text" class="input-field" id="debtPersonInput" placeholder="اسم المدين">
+    <input type="number" class="input-field" id="debtAmountInput" placeholder="المبلغ (بالآلاف)" inputmode="decimal" style="margin-top:6px">
+    <input type="text" class="input-field" id="debtNoteInput" placeholder="ملاحظة (اختياري)" style="margin-top:6px">
+    <button class="btn btn-primary btn-sm btn-block" onclick="addWizDebt()" style="margin-top:8px"><i class="ri-add-line"></i> إضافة دين</button>
+    <div class="debt-list">${items}</div></div>`;
+}
+function addWizDebt(){
+    const person = $('#debtPersonInput')?.value?.trim();
+    const amount = parseK($('#debtAmountInput')?.value);
+    const note = $('#debtNoteInput')?.value || '';
+    if(!person) return toast('أدخل اسم المدين');
+    if(!amount) return toast('أدخل المبلغ');
+    wizData.debtsList.push({person, amount, note});
+    const total = wizData.debtsList.reduce((s,d)=>s+d.amount,0);
+    wizData.fields.debts = total;
+    renderWizStep();
+}
+function removeWizDebt(i){
+    wizData.debtsList.splice(i,1);
+    const total = wizData.debtsList.reduce((s,d)=>s+d.amount,0);
+    wizData.fields.debts = total;
+    renderWizStep();
+}
+
+/* ===== Expense Entry ===== */
+function buildExpenseEntryUI(){
+    const list = wizData.expensesList || [];
+    let items = list.map((e,i)=>`<div class="debt-item"><span>${e.desc||'مصروف'}: ${fmtNum(e.amount)}</span><button onclick="removeWizExpense(${i})"><i class="ri-close-circle-line"></i></button></div>`).join('');
+    return `<div class="wiz-debt-entry"><h4><i class="ri-money-dollar-box-line"></i> تفاصيل المصاريف</h4>
+    <input type="number" class="input-field" id="expEntryAmountInput" placeholder="المبلغ (بالآلاف)" inputmode="decimal">
+    <input type="text" class="input-field" id="expEntryDescInput" placeholder="وصف المصروف" style="margin-top:6px">
+    <button class="btn btn-primary btn-sm btn-block" onclick="addWizExpense()" style="margin-top:8px"><i class="ri-add-line"></i> إضافة مصروف</button>
+    <div class="debt-list">${items}</div></div>`;
+}
+function addWizExpense(){
+    const amount = parseK($('#expEntryAmountInput')?.value);
+    const desc = $('#expEntryDescInput')?.value || '';
+    if(!amount) return toast('أدخل المبلغ');
+    wizData.expensesList.push({amount, desc});
+    const total = wizData.expensesList.reduce((s,e)=>s+e.amount,0);
+    wizData.fields.expenses = total;
+    renderWizStep();
+}
+function removeWizExpense(i){
+    wizData.expensesList.splice(i,1);
+    const total = wizData.expensesList.reduce((s,e)=>s+e.amount,0);
+    wizData.fields.expenses = total;
+    renderWizStep();
+}
+
+/* ===== Withdraw Entry ===== */
+function buildWithdrawEntryUI(){
+    const list = wizData.withdrawList || [];
+    let items = list.map((w,i)=>`<div class="withdraw-item"><span>${w.person}: ${fmtNum(w.amount)}</span><button onclick="removeWizWithdraw(${i})"><i class="ri-close-circle-line"></i></button></div>`).join('');
+    return `<div class="wiz-withdraw-entry"><h4><i class="ri-hand-coin-line"></i> تفاصيل السحوبات</h4>
+    <input type="text" class="input-field" id="withdrawPersonInput" placeholder="اسم الشخص">
+    <input type="number" class="input-field" id="withdrawAmountInput" placeholder="المبلغ (بالآلاف)" inputmode="decimal" style="margin-top:6px">
+    <input type="text" class="input-field" id="withdrawNoteInput" placeholder="ملاحظة (اختياري)" style="margin-top:6px">
+    <button class="btn btn-primary btn-sm btn-block" onclick="addWizWithdraw()" style="margin-top:8px"><i class="ri-add-line"></i> إضافة سحب</button>
+    <div class="withdraw-list">${items}</div></div>`;
+}
+function addWizWithdraw(){
+    const person = $('#withdrawPersonInput')?.value?.trim();
+    const amount = parseK($('#withdrawAmountInput')?.value);
+    const note = $('#withdrawNoteInput')?.value || '';
+    if(!person) return toast('أدخل اسم الشخص');
+    if(!amount) return toast('أدخل المبلغ');
+    wizData.withdrawList.push({person, amount, note});
+    const total = wizData.withdrawList.reduce((s,w)=>s+w.amount,0);
+    wizData.fields.withdrawals = total;
+    renderWizStep();
+}
+function removeWizWithdraw(i){
+    wizData.withdrawList.splice(i,1);
+    const total = wizData.withdrawList.reduce((s,w)=>s+w.amount,0);
+    wizData.fields.withdrawals = total;
+    renderWizStep();
+}
+
+/* ===== Wizard Summary ===== */
+function renderWizSummary(body){
+    const c = selectedCashier;
+    const d = wizData.fields;
+    const net = d.network || 0;
+    const deductions = (d.returns||0) + (d.expenses||0) + (d.lunch||0) + (d.debts||0) + (d.withdrawals||0);
+    const expected = (d.sales||0) - deductions;
+    const diff = net - expected;
+
+    let html = `<div class="wiz-summary">`;
+    if(wizData.manager){
+        html += `<div style="text-align:center;font-weight:700;color:var(--primary);margin-bottom:10px"><i class="ri-user-star-line"></i> المدير: ${wizData.manager}</div>`;
+    }
+    html += `<h4 style="color:${c.color};margin:10px 0 6px;font-size:.9rem;text-align:center"><i class="${c.icon}"></i> ${c.label}</h4>`;
+    html += `<table><thead><tr><th>البيان</th><th>المبلغ</th></tr></thead><tbody>`;
+    FIELDS.forEach(f => {
+        const v = d[f.key] || 0;
+        const clr = getTypeColor(f.type);
+        html += `<tr><td>${f.label}</td><td style="color:${clr};font-weight:700">${fmtNum(v)}</td></tr>`;
+    });
+    html += `<tr style="background:var(--surface2)"><td>إجمالي الخصومات</td><td style="color:var(--clr-expense);font-weight:700">${fmtNum(deductions)}</td></tr>`;
+    html += `<tr style="background:var(--surface2)"><td>المتوقع</td><td style="font-weight:700">${fmtNum(expected)}</td></tr>`;
+    if(diff !== 0){
+        html += `<tr style="background:#fef3c7"><td>الفرق</td><td style="color:${diff>0?'var(--clr-income)':'var(--clr-expense)'};font-weight:700">${fmtNum(diff)}</td></tr>`;
+    }
+    html += `<tr class="total-row"><td>الصافي (المبلغ المستلم)</td><td style="color:${net>=0?'var(--clr-income)':'var(--clr-expense)'}">${fmtNum(net)}</td></tr>`;
+    html += `</tbody></table></div>`;
+    body.innerHTML = html;
+}
+
+function getTypeColor(type){
+    const map = {income:'#16a34a',expense:'#dc2626',debt:'#ef4444',withdraw:'#d97706',deduct:'#7c3aed'};
+    return map[type] || 'var(--text)';
+}
+
+function saveCurrentStep(){
+    const info = getStepInfo(wizStep);
+    if(info.type === 'manager'){
+        const inp = $('#wizInput');
+        if(inp) wizData.manager = inp.value.trim();
+        return;
+    }
+    if(info.type === 'summary') return;
+    const {field} = info;
+    const inp = $('#wizInput');
+    if(inp) wizData.fields[field.key] = parseK(inp.value);
+}
+
+/* ========= Save Closing ========= */
+function saveClosing(){
+    const c = selectedCashier;
+    const d = wizData.fields;
+    const net = d.network || 0;
+
+    const closingRecord = {
+        id: uid(),
+        cashierKey: c.key,
+        cashierLabel: c.label,
+        date: today(),
+        manager: wizData.manager || '',
+        data: {...d},
+        debtsList: wizData.debtsList || [],
+        withdrawList: wizData.withdrawList || [],
+        expensesList: wizData.expensesList || [],
+        net: net,
+        timestamp: Date.now(),
+        synced: false
+    };
+
+    // Save locally
+    const closings = loadLocal(STORE_KEY);
+    closings.push(closingRecord);
+    saveLocal(STORE_KEY, closings);
+
+    // Add to pending queue
+    const pending = loadLocal(PENDING_KEY);
+    pending.push(closingRecord.id);
+    saveLocal(PENDING_KEY, pending);
+
+    // Close wizard
+    $('#wizardOverlay').classList.add('hidden');
+    document.body.classList.remove('wizard-open');
+    toast('تم حفظ التقفيلة');
+    renderClosings();
+
+    // Try to sync immediately
+    syncSingleClosing(closingRecord);
+}
+
+/* ========= Firebase Sync ========= */
+function syncSingleClosing(record){
+    if(!isOnline) {
+        updatePendingBanner();
+        return;
+    }
+
+    const badge = $('#syncStatus');
+    badge.className = 'sync-badge syncing';
+    badge.innerHTML = '<i class="ri-loader-4-line"></i>';
+
+    const firebaseData = {
+        id: record.id,
+        cashierKey: record.cashierKey,
+        cashierLabel: record.cashierLabel,
+        date: record.date,
+        manager: record.manager,
+        data: record.data,
+        debtsList: record.debtsList || [],
+        withdrawList: record.withdrawList || [],
+        expensesList: record.expensesList || [],
+        net: record.net,
+        timestamp: record.timestamp,
+        source: 'cashier-app'
+    };
+
+    db.ref('closings/' + record.id).set(firebaseData)
+        .then(() => {
+            // Mark as synced locally
+            markSynced(record.id);
+            removePending(record.id);
+            updateSyncUI();
+            renderClosings();
+            toast('تم المزامنة مع السيرفر');
+        })
+        .catch(err => {
+            console.error('Sync failed:', err);
+            updateSyncUI();
+        });
+}
+
+function syncPending(){
+    if(!isOnline) return toast('لا يوجد اتصال بالإنترنت');
+
+    const pending = loadLocal(PENDING_KEY);
+    if(!pending.length) return toast('لا توجد تقفيلات بانتظار المزامنة');
+
+    const closings = loadLocal(STORE_KEY);
+    const badge = $('#syncStatus');
+    badge.className = 'sync-badge syncing';
+    badge.innerHTML = '<i class="ri-loader-4-line"></i>';
+
+    let synced = 0;
+    const total = pending.length;
+
+    pending.forEach(id => {
+        const record = closings.find(c => c.id === id);
+        if(!record) { removePending(id); synced++; return; }
+
+        const firebaseData = {
+            id: record.id,
+            cashierKey: record.cashierKey,
+            cashierLabel: record.cashierLabel,
+            date: record.date,
+            manager: record.manager,
+            data: record.data,
+            debtsList: record.debtsList || [],
+            withdrawList: record.withdrawList || [],
+            expensesList: record.expensesList || [],
+            net: record.net,
+            timestamp: record.timestamp,
+            source: 'cashier-app'
+        };
+
+        db.ref('closings/' + record.id).set(firebaseData)
+            .then(() => {
+                markSynced(record.id);
+                removePending(record.id);
+                synced++;
+                if(synced >= total){
+                    updateSyncUI();
+                    renderClosings();
+                    toast('تم مزامنة جميع التقفيلات');
+                }
+            })
+            .catch(err => {
+                console.error('Sync failed for', id, err);
+                synced++;
+                if(synced >= total){ updateSyncUI(); }
+            });
+    });
+}
+
+function markSynced(id){
+    const closings = loadLocal(STORE_KEY);
+    const idx = closings.findIndex(c => c.id === id);
+    if(idx >= 0){
+        closings[idx].synced = true;
+        saveLocal(STORE_KEY, closings);
+    }
+}
+
+function removePending(id){
+    let pending = loadLocal(PENDING_KEY);
+    pending = pending.filter(p => p !== id);
+    saveLocal(PENDING_KEY, pending);
+}
+
+/* ========= DOMContentLoaded ========= */
+document.addEventListener('DOMContentLoaded', () => {
+    /* login events */
+    $('#loginBtn').addEventListener('click',doLogin);
+    $('#loginPass').addEventListener('keydown',e=>{if(e.key==='Enter')doLogin();});
+    $('#loginUser').addEventListener('keydown',e=>{if(e.key==='Enter')$('#loginPass').focus();});
+
+    /* check online status for login */
+    if(!navigator.onLine){
+        const offEl=$('#loginOffline');if(offEl)offEl.style.display='block';
+    }
+    window.addEventListener('online',()=>{const offEl=$('#loginOffline');if(offEl)offEl.style.display='none';});
+    window.addEventListener('offline',()=>{const offEl=$('#loginOffline');if(offEl)offEl.style.display='block';});
+
+    /* check existing session */
+    const session = getAuthSession();
+    if(session && session.cashierType && CASHIERS[session.cashierType]){
+        $('#loginOverlay').classList.add('hidden');
+        autoSelectCashier(session.cashierType);
+    }
+
+    // Register service worker
+    if('serviceWorker' in navigator){
+        navigator.serviceWorker.register('sw.js');
+    }
+});
