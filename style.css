@@ -146,6 +146,52 @@ select.input-field{appearance:auto}
 .toast{position:fixed;bottom:30px;left:50%;transform:translateX(-50%);background:var(--text);color:#fff;padding:10px 24px;border-radius:30px;font-size:.88rem;font-weight:600;z-index:500;transition:opacity .3s}
 .toast.hidden{opacity:0;pointer-events:none}
 
+/* ===== PWA INSTALL PROMPT ===== */
+.install-prompt{position:fixed;inset:0;z-index:800;display:flex;align-items:flex-end;justify-content:center;padding:0}
+.install-prompt.hidden{display:none!important}
+.install-prompt-overlay{position:absolute;inset:0;background:rgba(0,0,0,.5);backdrop-filter:blur(4px)}
+.install-prompt-card{position:relative;z-index:1;background:var(--surface);width:100%;max-width:480px;border-radius:24px 24px 0 0;padding:28px 24px 40px;box-shadow:0 -8px 40px rgba(0,0,0,.2);animation:slideUp .35s cubic-bezier(.34,1.56,.64,1)}
+@keyframes slideUp{from{transform:translateY(100%)}to{transform:translateY(0)}}
+.install-prompt-icon{text-align:center;margin-bottom:14px}
+.install-app-icon{width:80px;height:80px;border-radius:20px;box-shadow:0 4px 20px rgba(99,102,241,.35)}
+.install-title{font-size:1.15rem;font-weight:800;text-align:center;margin-bottom:6px;color:var(--text)}
+.install-desc{font-size:.85rem;color:var(--text2);text-align:center;margin-bottom:14px;line-height:1.6}
+.install-features{list-style:none;display:flex;flex-direction:column;gap:8px;margin-bottom:20px;background:var(--surface2);border-radius:var(--radius-sm);padding:12px 16px}
+.install-features li{display:flex;align-items:center;gap:8px;font-size:.85rem;font-weight:600;color:var(--text)}
+.install-features li i{color:var(--primary);font-size:1rem}
+.install-actions{display:flex;flex-direction:column;gap:8px}
+.btn-install{width:100%;justify-content:center;padding:14px;font-size:1rem;border-radius:var(--radius)}
+.btn-install-later{width:100%;justify-content:center;padding:10px;font-size:.88rem;color:var(--text2)}
+
+/* ===== iOS INSTALL GUIDE ===== */
+.ios-install-guide{position:fixed;inset:0;z-index:800;display:flex;align-items:flex-end;justify-content:center;background:rgba(0,0,0,.5);backdrop-filter:blur(4px)}
+.ios-install-guide.hidden{display:none!important}
+.ios-guide-card{background:var(--surface);width:100%;max-width:480px;border-radius:24px 24px 0 0;padding:28px 24px 44px;position:relative;animation:slideUp .35s cubic-bezier(.34,1.56,.64,1)}
+.ios-guide-close{position:absolute;top:16px;left:16px;background:var(--surface2);border:none;border-radius:50%;width:32px;height:32px;font-size:1.1rem;cursor:pointer;display:flex;align-items:center;justify-content:center;color:var(--text2)}
+.ios-guide-icon{text-align:center;margin-bottom:12px}
+.ios-guide-icon img{width:64px;height:64px;border-radius:16px}
+.ios-guide-card h3{text-align:center;font-size:1.1rem;font-weight:800;margin-bottom:20px;color:var(--text)}
+.ios-steps{display:flex;flex-direction:column;gap:14px}
+.ios-step{display:flex;align-items:flex-start;gap:12px;font-size:.88rem;color:var(--text);line-height:1.6}
+.ios-step-num{min-width:28px;height:28px;background:var(--primary);color:#fff;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:.85rem;margin-top:2px}
+
+/* ===== INSTALL FAB (floating button after dismiss) ===== */
+.install-fab{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);z-index:400;background:var(--primary);color:#fff;border:none;border-radius:30px;padding:11px 20px;display:flex;align-items:center;gap:8px;font:inherit;font-size:.88rem;font-weight:700;cursor:pointer;box-shadow:0 4px 20px rgba(99,102,241,.45);transition:all .2s;animation:fabIn .4s ease}
+@keyframes fabIn{from{transform:translateX(-50%) scale(0)}to{transform:translateX(-50%) scale(1)}}
+.install-fab.hidden{display:none!important}
+.install-fab:hover{background:var(--primary-d);transform:translateX(-50%) scale(1.04)}
+
+/* ===== EXIT CONFIRM DIALOG ===== */
+#exitConfirmDialog{position:fixed;inset:0;z-index:900;display:flex;align-items:center;justify-content:center;padding:20px}
+.exit-overlay{position:absolute;inset:0;background:rgba(0,0,0,.55);backdrop-filter:blur(4px)}
+.exit-card{position:relative;z-index:1;background:var(--surface);border-radius:var(--radius);padding:28px 24px;width:100%;max-width:340px;text-align:center;box-shadow:0 8px 40px rgba(0,0,0,.25);animation:exitIn .25s ease}
+@keyframes exitIn{from{transform:scale(.85);opacity:0}to{transform:scale(1);opacity:1}}
+.exit-icon{font-size:2.5rem;color:var(--danger);margin-bottom:10px}
+.exit-card h3{font-size:1.1rem;font-weight:800;margin-bottom:8px;color:var(--text)}
+.exit-card p{font-size:.88rem;color:var(--text2);margin-bottom:20px;line-height:1.6}
+.exit-actions{display:flex;flex-direction:column;gap:8px}
+.exit-actions .btn{justify-content:center;padding:12px;font-size:.92rem}
+
 /* ===== RESPONSIVE ===== */
 @media(min-width:768px){
     .main{max-width:600px;margin-left:auto;margin-right:auto}

@@ -1,4 +1,4 @@
-const CACHE = 'cashier-sub-v1';
+const CACHE = 'cashier-sub-v2';
 const ASSETS = [
     './',
     './index.html',

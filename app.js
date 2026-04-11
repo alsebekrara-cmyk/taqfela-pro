@@ -67,6 +67,7 @@ async function doLogin(){
 
         setAuthSession({username:found.username,cashierType:found.cashierType});
         $('#loginOverlay').classList.add('hidden');
+        pushNavState('home');
         autoSelectCashier(found.cashierType);
     }catch(e){
         console.error('Login error:',e);
@@ -241,6 +242,7 @@ function startWizard(){
     renderWizStep();
     $('#wizardOverlay').classList.remove('hidden');
     document.body.classList.add('wizard-open');
+    pushNavState('wizard', {step: wizStep});
 }
 
 function closeWizard(){
@@ -254,6 +256,7 @@ function wizNext(){
     if(wizStep === TOTAL_STEPS - 1){ saveClosing(); return; }
     wizStep++;
     renderWizStep();
+    pushNavState('wizard', {step: wizStep});
 }
 
 function wizPrev(){
@@ -590,7 +593,170 @@ function removePending(id){
     saveLocal(PENDING_KEY, pending);
 }
 
-/* ========= DOMContentLoaded ========= */
+/* ========= PWA Install Prompt ========= */
+let deferredPrompt = null;
+const INSTALL_DISMISSED_KEY = 'cashier_install_dismissed';
+
+function isIOS(){
+    return /iphone|ipad|ipod/i.test(navigator.userAgent) && !window.MSStream;
+}
+
+function isInStandaloneMode(){
+    return window.matchMedia('(display-mode: standalone)').matches
+        || window.navigator.standalone === true;
+}
+
+function showInstallPrompt(){
+    if(isInStandaloneMode()) return; // already installed
+    const dismissed = localStorage.getItem(INSTALL_DISMISSED_KEY);
+    // Show again after 3 days if dismissed
+    if(dismissed && (Date.now() - parseInt(dismissed)) < 3*24*60*60*1000) return;
+
+    if(isIOS()){
+        setTimeout(()=>{ $('#iosInstallGuide').classList.remove('hidden'); }, 1500);
+    } else if(deferredPrompt){
+        setTimeout(()=>{ $('#installPrompt').classList.remove('hidden'); }, 1500);
+    }
+}
+
+function dismissInstall(){
+    localStorage.setItem(INSTALL_DISMISSED_KEY, Date.now().toString());
+    $('#installPrompt').classList.add('hidden');
+    // Show FAB
+    showInstallFab();
+}
+
+function showInstallFab(){
+    if(!deferredPrompt || isInStandaloneMode()) return;
+    let fab = $('#installFab');
+    if(!fab){
+        fab = document.createElement('button');
+        fab.id = 'installFab';
+        fab.className = 'install-fab';
+        fab.innerHTML = '<i class="ri-download-2-line"></i> تثبيت التطبيق';
+        fab.onclick = triggerInstall;
+        document.body.appendChild(fab);
+    }
+    fab.classList.remove('hidden');
+}
+
+async function triggerInstall(){
+    if(!deferredPrompt) return;
+    deferredPrompt.prompt();
+    const { outcome } = await deferredPrompt.userChoice;
+    deferredPrompt = null;
+    $('#installPrompt').classList.add('hidden');
+    const fab = $('#installFab');
+    if(fab) fab.classList.add('hidden');
+    if(outcome === 'accepted'){
+        toast('✅ تم تثبيت التطبيق بنجاح!');
+        localStorage.removeItem(INSTALL_DISMISSED_KEY);
+    }
+}
+
+// Capture beforeinstallprompt
+window.addEventListener('beforeinstallprompt', e => {
+    e.preventDefault();
+    deferredPrompt = e;
+    showInstallPrompt();
+});
+
+// App installed
+window.addEventListener('appinstalled', () => {
+    deferredPrompt = null;
+    toast('✅ تم تثبيت التطبيق على جهازك');
+    const fab = $('#installFab');
+    if(fab) fab.classList.add('hidden');
+    $('#installPrompt').classList.add('hidden');
+    localStorage.removeItem(INSTALL_DISMISSED_KEY);
+});
+
+/* ========= Back Button Navigation (Android + Browser) ========= */
+// حالات التنقل: login → home → wizard → wizard-steps
+function pushNavState(page, extra={}){
+    history.pushState({page, ...extra}, '', '');
+}
+
+function handlePopState(e){
+    const state = e.state;
+
+    // 1. نافذة iOS أو Install مفتوحة؟ أغلقها أولاً
+    if(!$('#iosInstallGuide').classList.contains('hidden')){
+        $('#iosInstallGuide').classList.add('hidden');
+        history.pushState({page:'home'}, '', '');
+        return;
+    }
+    if(!$('#installPrompt').classList.contains('hidden')){
+        $('#installPrompt').classList.add('hidden');
+        history.pushState({page:'home'}, '', '');
+        return;
+    }
+
+    // 2. الويزارد مفتوح
+    if(!$('#wizardOverlay').classList.contains('hidden')){
+        if(wizStep > 0){
+            // ارجع خطوة للخلف داخل الويزارد
+            wizPrev();
+            // أعد push الحالة لأن popstate يحذفها
+            history.pushState({page:'wizard', step: wizStep}, '', '');
+        } else {
+            // الخطوة الأولى: أغلق الويزارد وارجع للرئيسية
+            closeWizard();
+            history.pushState({page:'home'}, '', '');
+        }
+        return;
+    }
+
+    // 3. الصفحة الرئيسية - اعرض تأكيد الخروج
+    if(!$('#app').classList.contains('hidden')){
+        showExitConfirm();
+        // أعد push الحالة حتى لا يخرج المستخدم
+        history.pushState({page:'home'}, '', '');
+        return;
+    }
+
+    // 4. إذا رجع إلى صفحة الـ login - لا تفعل شيء
+    if(!$('#loginOverlay').classList.contains('hidden')){
+        history.pushState({page:'login'}, '', '');
+        return;
+    }
+}
+
+/* ===== Exit Confirm Dialog ===== */
+function showExitConfirm(){
+    // إزالة أي dialog سابق
+    const old = $('#exitConfirmDialog');
+    if(old) old.remove();
+
+    const dialog = document.createElement('div');
+    dialog.id = 'exitConfirmDialog';
+    dialog.innerHTML = `
+        <div class="exit-overlay" onclick="closeExitConfirm()"></div>
+        <div class="exit-card">
+            <div class="exit-icon"><i class="ri-logout-box-r-line"></i></div>
+            <h3>تسجيل الخروج</h3>
+            <p>هل تريد تسجيل الخروج من التطبيق؟</p>
+            <div class="exit-actions">
+                <button class="btn btn-danger" onclick="closeExitConfirm();logoutCashier()">
+                    <i class="ri-logout-box-r-line"></i> تسجيل الخروج
+                </button>
+                <button class="btn btn-ghost" onclick="closeExitConfirm()">
+                    <i class="ri-close-line"></i> إلغاء
+                </button>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(dialog);
+}
+
+function closeExitConfirm(){
+    const d = $('#exitConfirmDialog');
+    if(d) d.remove();
+}
+
+window.addEventListener('popstate', handlePopState);
+
+
 document.addEventListener('DOMContentLoaded', () => {
     /* login events */
     $('#loginBtn').addEventListener('click',doLogin);
@@ -608,11 +774,36 @@ document.addEventListener('DOMContentLoaded', () => {
     const session = getAuthSession();
     if(session && session.cashierType && CASHIERS[session.cashierType]){
         $('#loginOverlay').classList.add('hidden');
+        pushNavState('home');
         autoSelectCashier(session.cashierType);
+    } else {
+        // صفحة اللوغن هي الحالة الأساسية
+        history.replaceState({page:'login'}, '', '');
     }
 
     // Register service worker
     if('serviceWorker' in navigator){
         navigator.serviceWorker.register('sw.js');
+    }
+
+    /* PWA install buttons */
+    const installBtn = $('#installBtn');
+    if(installBtn) installBtn.addEventListener('click', triggerInstall);
+
+    const installLaterBtn = $('#installLaterBtn');
+    if(installLaterBtn) installLaterBtn.addEventListener('click', dismissInstall);
+
+    const iosGuideClose = $('#iosGuideClose');
+    if(iosGuideClose) iosGuideClose.addEventListener('click', ()=>{
+        $('#iosInstallGuide').classList.add('hidden');
+        localStorage.setItem(INSTALL_DISMISSED_KEY, Date.now().toString());
+    });
+
+    // On iOS: show guide if not installed
+    if(isIOS() && !isInStandaloneMode()){
+        const dismissed = localStorage.getItem(INSTALL_DISMISSED_KEY);
+        if(!dismissed || (Date.now() - parseInt(dismissed)) > 3*24*60*60*1000){
+            setTimeout(()=>{ $('#iosInstallGuide').classList.remove('hidden'); }, 2000);
+        }
     }
 });
