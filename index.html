@@ -63,6 +63,17 @@
                 <span class="topbar-title" id="topbarTitle">تقفيلة الكاشير</span>
             </div>
             <div class="topbar-l">
+                <button class="topbar-btn cashier-notif-btn" id="cashierNotifToggle" onclick="toggleCashierNotifPanel()" title="الإشعارات">
+                    <i class="ri-notification-3-line"></i>
+                    <span class="cnotif-badge" id="cashierNotifBadge" style="display:none">0</span>
+                </button>
+                <div id="cashierNotifPanel" class="cashier-notif-panel hidden">
+                    <div class="cnotif-header">
+                        <h3 style="font-size:.9rem;margin:0"><i class="ri-notification-3-line"></i> الإشعارات</h3>
+                        <button class="btn btn-ghost btn-sm" onclick="markAllCashierNotifsRead()" title="تعيين الكل كمقروء"><i class="ri-check-double-line"></i></button>
+                    </div>
+                    <div id="cashierNotifList" class="cnotif-list"></div>
+                </div>
                 <span id="syncStatus" class="sync-badge offline"><i class="ri-wifi-off-line"></i></span>
                 <span class="topbar-date" id="topbarDate"></span>
             </div>

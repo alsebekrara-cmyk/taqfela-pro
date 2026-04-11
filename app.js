@@ -193,6 +193,10 @@ function initApp(){
 
     updateSyncUI();
     renderClosings();
+
+    // Start notification listener
+    startCashierNotifListener();
+    updateCashierNotifBadge();
 }
 
 /* ========= Render Closings ========= */
@@ -593,6 +597,208 @@ function removePending(id){
     saveLocal(PENDING_KEY, pending);
 }
 
+/* ========= CASHIER NOTIFICATION SYSTEM ========= */
+const CASHIER_NOTIF_KEY='cashier_sub_notifications';
+
+function loadCashierNotifs(){try{return JSON.parse(localStorage.getItem(CASHIER_NOTIF_KEY))||[];}catch(e){return[];}}
+function saveCashierNotifs(notifs){localStorage.setItem(CASHIER_NOTIF_KEY,JSON.stringify(notifs));}
+
+function startCashierNotifListener(){
+    if(!db||!selectedCashier) return;
+    db.ref('notifications').orderByChild('targetApp').equalTo('cashier').on('child_added',snap=>{
+        const notif=snap.val();
+        if(!notif) return;
+        if(notif.targetCashierType&&notif.targetCashierType!==selectedCashier.key) return;
+        const notifs=loadCashierNotifs();
+        if(notifs.find(n=>n.id===notif.id)) return;
+        notifs.unshift(notif);
+        saveCashierNotifs(notifs);
+        updateCashierNotifBadge();
+        if(notif.type==='alert_shortage'){
+            showAlertBanner(notif);
+        }
+    });
+}
+
+function updateCashierNotifBadge(){
+    const notifs=loadCashierNotifs();
+    const unread=notifs.filter(n=>!n.read).length;
+    const badge=$('#cashierNotifBadge');
+    if(badge){badge.textContent=unread;badge.style.display=unread>0?'':'none';}
+}
+
+function toggleCashierNotifPanel(){
+    const panel=$('#cashierNotifPanel');
+    if(!panel) return;
+    if(panel.classList.contains('hidden')){
+        renderCashierNotifPanel();
+        panel.classList.remove('hidden');
+    } else {
+        panel.classList.add('hidden');
+    }
+}
+
+function renderCashierNotifPanel(){
+    const notifs=loadCashierNotifs();
+    const list=$('#cashierNotifList');
+    if(!list) return;
+    if(!notifs.length){
+        list.innerHTML='<div style="padding:20px;text-align:center;color:var(--text3)"><i class="ri-notification-off-line" style="font-size:2rem;display:block;margin-bottom:6px"></i>لا توجد إشعارات</div>';
+        return;
+    }
+    list.innerHTML=notifs.slice(0,30).map(n=>{
+        const timeAgo=cashierGetTimeAgo(n.timestamp);
+        const readClass=n.read?'cnotif-read':'cnotif-unread';
+        const typeLabels={shortage:'نقص',error:'خطأ',note:'ملاحظة'};
+        const alertLabel=typeLabels[n.alertType]||'تنبيه';
+        const statusHtml=n.status==='resolved'?
+            '<span style="font-size:.72rem;background:rgba(34,197,94,.12);color:#16a34a;padding:1px 6px;border-radius:6px"><i class="ri-check-line"></i> تم الرد</span>':
+            '<span style="font-size:.72rem;background:rgba(245,158,11,.12);color:#d97706;padding:1px 6px;border-radius:6px"><i class="ri-time-line"></i> بانتظار الرد</span>';
+        return `<div class="cnotif-item ${readClass}" onclick="openCashierNotifDetail('${n.id}')">
+            <div class="cnotif-icon"><i class="ri-${n.type==='alert_shortage'?'error-warning':'notification-3'}-line"></i></div>
+            <div class="cnotif-content">
+                <div style="font-size:.84rem;font-weight:700">${escapeHtmlCashier(n.title||alertLabel)}</div>
+                <div style="font-size:.78rem;color:var(--text2);margin:2px 0">${escapeHtmlCashier(n.message||'')}</div>
+                ${n.type==='alert_shortage'?statusHtml:''}
+                <div style="font-size:.7rem;color:var(--text3)">${n.senderUser?' من: '+escapeHtmlCashier(n.senderUser)+' | ':''} ${timeAgo}</div>
+            </div>
+        </div>`;
+    }).join('');
+}
+
+function escapeHtmlCashier(str){return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+
+function showAlertBanner(notif){
+    let banner=$('#alertBanner');
+    if(!banner){
+        banner=document.createElement('div');
+        banner.id='alertBanner';
+        banner.className='alert-banner';
+        document.body.appendChild(banner);
+    }
+    const typeLabels={shortage:'نقص في التقفيلة',error:'خطأ في البيانات',note:'ملاحظة'};
+    banner.innerHTML=`<div class="alert-banner-content">
+        <i class="ri-error-warning-fill" style="font-size:1.2rem"></i>
+        <div style="flex:1"><strong>${typeLabels[notif.alertType]||'تنبيه'}</strong><br><span style="font-size:.8rem">${escapeHtmlCashier(notif.message||'')}</span></div>
+        <button class="btn btn-sm" onclick="openCashierNotifDetail('${notif.id}')" style="background:rgba(255,255,255,.2);color:#fff;border:none"><i class="ri-eye-line"></i> عرض</button>
+        <button onclick="this.parentElement.parentElement.remove()" style="background:none;border:none;color:#fff;font-size:1.2rem;cursor:pointer"><i class="ri-close-line"></i></button>
+    </div>`;
+    banner.style.display='block';
+    setTimeout(()=>{if(banner.parentElement)banner.remove();},15000);
+}
+
+function openCashierNotifDetail(id){
+    const notifs=loadCashierNotifs();
+    const notif=notifs.find(n=>n.id===id);
+    if(!notif) return;
+    notif.read=true;
+    saveCashierNotifs(notifs);
+    updateCashierNotifBadge();
+    const panel=$('#cashierNotifPanel');
+    if(panel&&!panel.classList.contains('hidden')) panel.classList.add('hidden');
+
+    const typeLabels={shortage:'نقص في التقفيلة',error:'خطأ في البيانات',note:'ملاحظة عامة'};
+    let html=`<div style="text-align:center;margin-bottom:12px">
+        <div style="width:50px;height:50px;border-radius:50%;background:linear-gradient(135deg,#f59e0b,#ef4444);color:#fff;display:flex;align-items:center;justify-content:center;font-size:1.5rem;margin:0 auto 8px"><i class="ri-error-warning-fill"></i></div>
+        <div style="font-weight:700;font-size:1rem;color:var(--danger)">${typeLabels[notif.alertType]||'تنبيه'}</div>
+        <div style="font-size:.82rem;color:var(--text2);margin-top:4px">من: ${escapeHtmlCashier(notif.senderUser||'المسؤول')}</div>
+        <div style="font-size:.78rem;color:var(--text3)">${notif.closingDate||''} - ${notif.cashierLabel||''}</div>
+    </div>
+    <div style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:12px;margin-bottom:12px;font-size:.88rem;line-height:1.6">${escapeHtmlCashier(notif.message||'')}</div>`;
+
+    if(notif.status==='pending'){
+        html+=`<div class="field"><label>ردك / ملاحظتك</label><textarea id="alertResponse" class="input-field" rows="3" placeholder="اكتب ردك هنا..."></textarea></div>
+        <div style="display:flex;gap:8px;margin-top:8px">
+            <button class="btn btn-success" onclick="respondToAlert('${notif.id}','resolved')" style="flex:1"><i class="ri-check-line"></i> تم إتمام النقص</button>
+            <button class="btn btn-primary" onclick="respondToAlert('${notif.id}','noted')" style="flex:1"><i class="ri-chat-3-line"></i> إرسال رد</button>
+        </div>`;
+    } else {
+        html+=`<div style="text-align:center;color:#16a34a;font-weight:700;font-size:.9rem"><i class="ri-check-double-line"></i> تم الرد على هذا التنبيه</div>`;
+        if(notif.responseMessage) html+=`<div style="background:rgba(34,197,94,.08);border:1px solid rgba(34,197,94,.2);border-radius:8px;padding:8px 12px;margin-top:8px;font-size:.85rem">${escapeHtmlCashier(notif.responseMessage)}</div>`;
+    }
+
+    // Show in a modal overlay
+    let overlay=$('#alertDetailOverlay');
+    if(!overlay){
+        overlay=document.createElement('div');
+        overlay.id='alertDetailOverlay';
+        overlay.className='alert-detail-overlay';
+        document.body.appendChild(overlay);
+    }
+    overlay.innerHTML=`<div class="alert-detail-card">
+        <button class="wiz-close" onclick="$('#alertDetailOverlay').classList.add('hidden')"><i class="ri-close-line"></i></button>
+        ${html}
+    </div>`;
+    overlay.classList.remove('hidden');
+}
+
+function respondToAlert(notifId,status){
+    const responseMsg=$('#alertResponse')?.value?.trim()||'';
+    if(!responseMsg) return toast('اكتب ردك أولاً');
+    const session=getAuthSession();
+    const senderName=session?session.username:'كاشير';
+
+    // Update notification status in Firebase
+    db.ref('notifications/'+notifId).update({
+        status:status==='resolved'?'resolved':'noted',
+        responseMessage:responseMsg,
+        respondedBy:senderName,
+        respondedAt:Date.now()
+    }).then(()=>{
+        // Create response notification for main app
+        const respNotifId=uid();
+        db.ref('notifications/'+respNotifId).set({
+            id:respNotifId,
+            type:'alert_response',
+            title:status==='resolved'?'تم إتمام النقص':'رد على التنبيه',
+            message:responseMsg,
+            originalNotifId:notifId,
+            timestamp:Date.now(),
+            targetApp:'main',
+            read:false,
+            senderUser:senderName
+        });
+
+        // Update local notif
+        const notifs=loadCashierNotifs();
+        const notif=notifs.find(n=>n.id===notifId);
+        if(notif){
+            notif.status=status==='resolved'?'resolved':'noted';
+            notif.responseMessage=responseMsg;
+            saveCashierNotifs(notifs);
+        }
+
+        toast('تم إرسال الرد بنجاح');
+        const overlay=$('#alertDetailOverlay');
+        if(overlay) overlay.classList.add('hidden');
+        renderCashierNotifPanel();
+    }).catch(e=>{
+        toast('فشل إرسال الرد');
+        console.error(e);
+    });
+}
+
+function markAllCashierNotifsRead(){
+    const notifs=loadCashierNotifs();
+    notifs.forEach(n=>n.read=true);
+    saveCashierNotifs(notifs);
+    updateCashierNotifBadge();
+    renderCashierNotifPanel();
+}
+
+function cashierGetTimeAgo(ts){
+    if(!ts) return '';
+    const diff=Date.now()-ts;
+    const mins=Math.floor(diff/60000);
+    if(mins<1) return 'الآن';
+    if(mins<60) return mins+' دقيقة';
+    const hrs=Math.floor(mins/60);
+    if(hrs<24) return hrs+' ساعة';
+    const days=Math.floor(hrs/24);
+    if(days<30) return days+' يوم';
+    return Math.floor(days/30)+' شهر';
+}
+
 /* ========= PWA Install Prompt ========= */
 let deferredPrompt = null;
 const INSTALL_DISMISSED_KEY = 'cashier_install_dismissed';
@@ -785,6 +991,12 @@ document.addEventListener('DOMContentLoaded', () => {
     if('serviceWorker' in navigator){
         navigator.serviceWorker.register('sw.js');
     }
+
+    /* notification panel close on outside click */
+    document.addEventListener('click',e=>{
+        const panel=$('#cashierNotifPanel');const toggle=$('#cashierNotifToggle');
+        if(panel&&!panel.classList.contains('hidden')&&!panel.contains(e.target)&&toggle&&!toggle.contains(e.target))panel.classList.add('hidden');
+    });
 
     /* PWA install buttons */
     const installBtn = $('#installBtn');
