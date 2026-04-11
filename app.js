@@ -100,8 +100,38 @@ const STORE_KEY = 'cashier_sub_closings';
 const PENDING_KEY = 'cashier_sub_pending';
 const SELECTED_KEY = 'cashier_sub_selected';
 
-function loadLocal(k){try{return JSON.parse(localStorage.getItem(k))||[];}catch(e){return [];}}
-function saveLocal(k,v){localStorage.setItem(k,JSON.stringify(v));}
+function loadLocal(k){
+    try{
+        const raw=localStorage.getItem(k);
+        if(!raw) return [];
+        const parsed=JSON.parse(raw);
+        // ensure we always return an array for array keys
+        return Array.isArray(parsed)?parsed:(parsed||[]);
+    }catch(e){
+        console.warn('loadLocal error for',k,e);
+        // Try to recover from backup
+        try{
+            const bak=localStorage.getItem(k+'_bak');
+            if(bak){const p=JSON.parse(bak);return Array.isArray(p)?p:[];}
+        }catch(e2){}
+        return [];
+    }
+}
+function saveLocal(k,v){
+    try{
+        const str=JSON.stringify(v);
+        localStorage.setItem(k,str);
+        // Keep a rolling backup for critical keys
+        if(k===STORE_KEY){localStorage.setItem(k+'_bak',str);}
+    }catch(e){
+        console.error('saveLocal error for',k,e);
+        if(e.name==='QuotaExceededError'){
+            // Try to free space by removing old backup
+            localStorage.removeItem(k+'_bak');
+            try{localStorage.setItem(k,JSON.stringify(v));}catch(e2){console.error('Save failed even after cleanup',e2);}
+        }
+    }
+}
 
 /* ========= Cashier Data ========= */
 const CASHIERS = {
@@ -469,20 +499,39 @@ function saveClosing(){
         synced: false
     };
 
-    // Save locally
-    const closings = loadLocal(STORE_KEY);
-    closings.push(closingRecord);
-    saveLocal(STORE_KEY, closings);
+    // === SAFE SAVE: Load, verify array, push, save, verify write ===
+    let closings = loadLocal(STORE_KEY);
+    if(!Array.isArray(closings)) closings = [];
 
-    // Add to pending queue
-    const pending = loadLocal(PENDING_KEY);
-    pending.push(closingRecord.id);
-    saveLocal(PENDING_KEY, pending);
+    // Prevent duplicate: if same id already saved, skip
+    if(!closings.find(x => x.id === closingRecord.id)){
+        closings.push(closingRecord);
+        saveLocal(STORE_KEY, closings);
+
+        // Verify the write actually worked
+        const verify = loadLocal(STORE_KEY);
+        if(!verify.find(x => x.id === closingRecord.id)){
+            // Try one more time
+            verify.push(closingRecord);
+            saveLocal(STORE_KEY, verify);
+            console.warn('Write verification failed once - retried');
+        }
+    }
+
+    // Add to pending queue (avoid duplicates)
+    let pending = loadLocal(PENDING_KEY);
+    if(!Array.isArray(pending)) pending = [];
+    if(!pending.includes(closingRecord.id)){
+        pending.push(closingRecord.id);
+        saveLocal(PENDING_KEY, pending);
+    }
 
     // Close wizard
     $('#wizardOverlay').classList.add('hidden');
     document.body.classList.remove('wizard-open');
-    toast('تم حفظ التقفيلة');
+
+    const totalSaved = loadLocal(STORE_KEY).filter(x => x.cashierKey === c.key).length;
+    toast('✅ تم حفظ التقفيلة - الإجمالي: ' + totalSaved);
     renderClosings();
 
     // Try to sync immediately
