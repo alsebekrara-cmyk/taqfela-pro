@@ -122,7 +122,7 @@ select.input-field{appearance:auto}
 .wizard-progress-bar{height:4px;background:var(--border);flex-shrink:0}
 .wizard-progress-fill{height:100%;background:var(--warning);transition:width .3s;border-radius:2px}
 .wizard-body{flex:1;padding:20px 16px;overflow-y:auto;-webkit-overflow-scrolling:touch}
-.wizard-footer{display:flex;justify-content:space-between;padding:12px 16px;background:var(--surface);border-top:1px solid var(--border);flex-shrink:0}
+.wizard-footer{display:flex;flex-direction:row-reverse;justify-content:space-between;padding:12px 16px;background:var(--surface);border-top:1px solid var(--border);flex-shrink:0}
 .wiz-label{font-size:.85rem;color:var(--text2);margin-bottom:6px;font-weight:600}
 .wiz-input{width:100%;padding:14px;border:2px solid var(--border);border-radius:var(--radius);font:inherit;font-size:1.4rem;font-weight:700;text-align:center;background:var(--surface2);transition:border .2s}
 .wiz-input:focus{outline:none;border-color:var(--primary)}

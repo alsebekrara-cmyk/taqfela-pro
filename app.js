@@ -231,12 +231,13 @@ function getStepInfo(step){
 }
 
 function startWizard(){
-    wizData = {manager:'', fields:{}};
+    const session = getAuthSession();
+    wizData = {manager:session?session.username:'', fields:{}};
     FIELDS.forEach(f => wizData.fields[f.key] = 0);
     wizData.debtsList = [];
     wizData.withdrawList = [];
     wizData.expensesList = [];
-    wizStep = 0;
+    wizStep = 1; /* skip manager step - auto-filled from login */
     renderWizStep();
     $('#wizardOverlay').classList.remove('hidden');
     document.body.classList.add('wizard-open');
