@@ -57,7 +57,7 @@ body.wizard-open{overflow:hidden;position:fixed;width:100%;height:100%}
 .cashier-option[data-key="cosmetics"] i{color:#f59e0b}
 
 /* ===== MAIN ===== */
-.main{margin-top:var(--topbar-h);padding:16px;min-height:calc(100dvh - var(--topbar-h));overflow-y:auto}
+.main{margin-top:var(--topbar-h);padding:16px;padding-bottom:80px;min-height:calc(100dvh - var(--topbar-h));overflow-y:auto}
 .page{display:none}
 .page.active{display:block}
 
@@ -143,8 +143,48 @@ select.input-field{appearance:auto}
 .debtor-add-row .input-field{flex:1}
 
 /* ===== TOAST ===== */
-.toast{position:fixed;bottom:30px;left:50%;transform:translateX(-50%);background:var(--text);color:#fff;padding:10px 24px;border-radius:30px;font-size:.88rem;font-weight:600;z-index:500;transition:opacity .3s}
+.toast{position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:var(--text);color:#fff;padding:10px 24px;border-radius:30px;font-size:.88rem;font-weight:600;z-index:500;transition:opacity .3s}
 .toast.hidden{opacity:0;pointer-events:none}
+
+/* ===== BOTTOM NAV ===== */
+.bottom-nav{position:fixed;bottom:0;left:0;right:0;height:60px;background:var(--surface);border-top:1px solid var(--border);display:flex;align-items:center;justify-content:center;gap:0;z-index:99;box-shadow:0 -2px 12px rgba(0,0,0,.06)}
+.bnav-item{flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;background:none;border:none;font:inherit;font-size:.72rem;font-weight:600;color:var(--text3);cursor:pointer;padding:8px 0;position:relative;transition:color .2s}
+.bnav-item i{font-size:1.3rem;transition:transform .2s}
+.bnav-item.active{color:var(--primary)}
+.bnav-item.active i{transform:scale(1.1)}
+.bnav-badge{position:absolute;top:2px;right:calc(50% - 20px);background:var(--danger);color:#fff;font-size:.6rem;font-weight:800;min-width:16px;height:16px;border-radius:50%;display:flex;align-items:center;justify-content:center;padding:0 3px}
+
+/* ===== LOG PAGE ===== */
+.log-header-card{background:var(--surface);border-radius:var(--radius);padding:16px;margin-bottom:12px;box-shadow:var(--shadow)}
+.log-header-top{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px}
+.log-header-top h3{font-size:1rem;font-weight:800;color:var(--primary);display:flex;align-items:center;gap:6px}
+.log-date-badge{font-size:.78rem;background:var(--surface2);padding:4px 10px;border-radius:8px;color:var(--text2);font-weight:600;border:1px solid var(--border)}
+.log-desc{font-size:.82rem;color:var(--text2);line-height:1.5}
+
+.log-type-tabs{display:flex;gap:6px;overflow-x:auto;padding:4px 0 12px;-webkit-overflow-scrolling:touch;scrollbar-width:none}
+.log-type-tabs::-webkit-scrollbar{display:none}
+.log-tab{display:flex;align-items:center;gap:4px;padding:8px 14px;border:1.5px solid var(--border);border-radius:20px;background:var(--surface);font:inherit;font-size:.78rem;font-weight:600;color:var(--text2);cursor:pointer;white-space:nowrap;transition:all .2s}
+.log-tab i{font-size:.9rem}
+.log-tab.active{background:var(--primary);color:#fff;border-color:var(--primary)}
+.log-tab:not(.active):hover{border-color:var(--primary);color:var(--primary)}
+
+.log-form-card{background:var(--surface);border-radius:var(--radius);padding:16px;box-shadow:var(--shadow)}
+.log-form-title{font-size:.9rem;font-weight:700;margin-bottom:10px;display:flex;align-items:center;gap:6px}
+
+.log-count-badge{background:var(--primary);color:#fff;font-size:.7rem;font-weight:700;min-width:20px;height:20px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;margin-right:4px}
+
+.log-entry-card{border-right:3px solid var(--border)}
+.log-del-btn{background:none;border:none;color:var(--danger);cursor:pointer;font-size:1.1rem;padding:4px;opacity:.6;transition:opacity .2s}
+.log-del-btn:hover{opacity:1}
+
+/* ===== AUTO-FILL TAG (wizard) ===== */
+.auto-fill-tag{text-align:center;font-size:.78rem;font-weight:600;color:var(--primary);background:rgba(99,102,241,.08);border:1px solid rgba(99,102,241,.2);border-radius:8px;padding:5px 10px;margin-bottom:8px;display:flex;align-items:center;justify-content:center;gap:4px}
+
+[data-theme="dark"] .bottom-nav{background:#1e293b;border-color:#475569}
+[data-theme="dark"] .log-tab{background:#334155;border-color:#475569;color:var(--text2)}
+[data-theme="dark"] .log-tab.active{background:var(--primary);color:#fff;border-color:var(--primary)}
+[data-theme="dark"] .log-form-card{background:#1e293b}
+[data-theme="dark"] .log-header-card{background:#1e293b}
 
 /* ===== PWA INSTALL PROMPT ===== */
 .install-prompt{position:fixed;inset:0;z-index:800;display:flex;align-items:flex-end;justify-content:center;padding:0}

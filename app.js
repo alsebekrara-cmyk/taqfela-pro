@@ -99,6 +99,10 @@ function logoutCashier(){
 const STORE_KEY = 'cashier_sub_closings';
 const PENDING_KEY = 'cashier_sub_pending';
 const SELECTED_KEY = 'cashier_sub_selected';
+const LOG_KEY = 'cashier_sub_log';
+
+let currentPage = 'home';
+let currentLogType = 'returns';
 
 function loadLocal(k){
     try{
@@ -227,6 +231,165 @@ function initApp(){
     // Start notification listener
     startCashierNotifListener();
     updateCashierNotifBadge();
+
+    // Init log page
+    renderLogPage();
+}
+
+/* ========= Page Navigation ========= */
+function showPage(page){
+    currentPage = page;
+    $$('.page').forEach(p => p.classList.remove('active'));
+    const target = $(`#page-${page}`);
+    if(target) target.classList.add('active');
+    $$('.bnav-item').forEach(b => {
+        b.classList.toggle('active', b.dataset.page === page);
+    });
+    if(page === 'log'){
+        renderLogPage();
+        pushNavState('log');
+    }
+}
+
+/* ========= Daily Log System ========= */
+const LOG_TYPES = {
+    returns:     {label:'التخفيضات',  icon:'ri-arrow-go-back-line',    color:'#7c3aed', needsPerson:false},
+    expenses:    {label:'المصاريف',   icon:'ri-money-dollar-box-line', color:'#dc2626', needsPerson:false, needsDesc:true},
+    lunch:       {label:'الغداء',     icon:'ri-restaurant-line',       color:'#dc2626', needsPerson:false},
+    debts:       {label:'الديون',     icon:'ri-file-list-3-line',      color:'#ef4444', needsPerson:true},
+    withdrawals: {label:'السحوبات',   icon:'ri-hand-coin-line',        color:'#d97706', needsPerson:true}
+};
+
+function selectLogType(type){
+    currentLogType = type;
+    $$('.log-tab').forEach(t => t.classList.toggle('active', t.dataset.type === type));
+    renderLogEntryForm();
+}
+
+function renderLogPage(){
+    if(!selectedCashier) return;
+    // Update date badge
+    const badge = $('#logDateBadge');
+    if(badge) badge.textContent = today();
+    renderLogEntryForm();
+    renderLogEntries();
+    updateLogBadge();
+}
+
+function renderLogEntryForm(){
+    const form = $('#logEntryForm');
+    if(!form) return;
+    const info = LOG_TYPES[currentLogType];
+    let html = `<div class="log-form-card">`;
+    html += `<div class="log-form-title" style="color:${info.color}"><i class="${info.icon}"></i> إضافة ${info.label}</div>`;
+
+    if(info.needsPerson){
+        html += `<input type="text" class="input-field" id="logPersonInput" placeholder="${currentLogType==='debts'?'اسم المدين':'اسم الشخص'}">`;
+    }
+    html += `<input type="number" class="input-field" id="logAmountInput" placeholder="المبلغ (بالآلاف)" inputmode="decimal" style="margin-top:8px">`;
+    if(info.needsDesc){
+        html += `<input type="text" class="input-field" id="logDescInput" placeholder="وصف المصروف" style="margin-top:8px">`;
+    }
+    html += `<input type="text" class="input-field" id="logNoteInput" placeholder="ملاحظة (اختياري)" style="margin-top:8px">`;
+    html += `<button class="btn btn-primary btn-block" onclick="addLogEntry()" style="margin-top:10px"><i class="ri-add-line"></i> إضافة</button>`;
+    html += `</div>`;
+    form.innerHTML = html;
+    setTimeout(()=>{
+        const firstInput = info.needsPerson ? $('#logPersonInput') : $('#logAmountInput');
+        if(firstInput) firstInput.focus();
+    },50);
+}
+
+function addLogEntry(){
+    if(!selectedCashier) return;
+    const info = LOG_TYPES[currentLogType];
+    const amount = parseK($('#logAmountInput')?.value);
+    if(!amount) return toast('أدخل المبلغ');
+
+    let person = '';
+    if(info.needsPerson){
+        person = $('#logPersonInput')?.value?.trim() || '';
+        if(!person) return toast(currentLogType==='debts'?'أدخل اسم المدين':'أدخل اسم الشخص');
+    }
+
+    const desc = $('#logDescInput')?.value?.trim() || '';
+    const note = $('#logNoteInput')?.value?.trim() || '';
+
+    const entry = {
+        id: uid(),
+        cashierKey: selectedCashier.key,
+        date: today(),
+        type: currentLogType,
+        amount,
+        person,
+        desc,
+        note,
+        timestamp: Date.now()
+    };
+
+    let logs = loadLocal(LOG_KEY);
+    logs.push(entry);
+    saveLocal(LOG_KEY, logs);
+
+    toast('✅ تم إضافة القيد');
+    renderLogEntryForm();
+    renderLogEntries();
+    updateLogBadge();
+}
+
+function removeLogEntry(id){
+    let logs = loadLocal(LOG_KEY);
+    logs = logs.filter(l => l.id !== id);
+    saveLocal(LOG_KEY, logs);
+    renderLogEntries();
+    updateLogBadge();
+}
+
+function getTodayLogs(){
+    if(!selectedCashier) return [];
+    const logs = loadLocal(LOG_KEY);
+    const d = today();
+    return logs.filter(l => l.cashierKey === selectedCashier.key && l.date === d);
+}
+
+function renderLogEntries(){
+    const list = $('#logEntriesList');
+    if(!list) return;
+    const entries = getTodayLogs().sort((a,b) => b.timestamp - a.timestamp);
+    const countBadge = $('#logCountBadge');
+    if(countBadge) countBadge.textContent = entries.length;
+
+    if(!entries.length){
+        list.innerHTML = '<div class="empty-state"><i class="ri-inbox-line"></i><p>لا توجد قيود اليوم</p></div>';
+        return;
+    }
+
+    list.innerHTML = entries.map(e => {
+        const info = LOG_TYPES[e.type] || {};
+        const time = new Date(e.timestamp).toLocaleTimeString('ar-SA',{hour:'2-digit',minute:'2-digit'});
+        let label = info.label || e.type;
+        if(e.person) label = e.person;
+        else if(e.desc) label = e.desc;
+        return `<div class="record-card log-entry-card">
+            <div class="rec-info">
+                <div class="rec-title"><i class="${info.icon}" style="color:${info.color}"></i> ${escapeHtmlCashier(label)}</div>
+                <div class="rec-sub">${info.label} - ${time}${e.note?' - '+escapeHtmlCashier(e.note):''}</div>
+            </div>
+            <div style="display:flex;align-items:center;gap:8px">
+                <div class="rec-amount" style="color:${info.color}">${fmtNum(e.amount)}</div>
+                <button class="log-del-btn" onclick="removeLogEntry('${e.id}')"><i class="ri-delete-bin-line"></i></button>
+            </div>
+        </div>`;
+    }).join('');
+}
+
+function updateLogBadge(){
+    const count = getTodayLogs().length;
+    const navBadge = $('#logNavBadge');
+    if(navBadge){
+        navBadge.textContent = count;
+        navBadge.style.display = count > 0 ? '' : 'none';
+    }
 }
 
 /* ========= Render Closings ========= */
@@ -272,6 +435,30 @@ function startWizard(){
     wizData.debtsList = [];
     wizData.withdrawList = [];
     wizData.expensesList = [];
+
+    // Auto-fill from today's log entries
+    const todayEntries = getTodayLogs();
+    if(todayEntries.length > 0){
+        todayEntries.forEach(e => {
+            if(e.type === 'debts'){
+                wizData.debtsList.push({person:e.person, amount:e.amount, note:e.note||''});
+            } else if(e.type === 'withdrawals'){
+                wizData.withdrawList.push({person:e.person, amount:e.amount, note:e.note||''});
+            } else if(e.type === 'expenses'){
+                wizData.expensesList.push({amount:e.amount, desc:e.desc||''});
+            }
+        });
+        // Sum up totals per field from log entries
+        ['returns','expenses','lunch','debts','withdrawals'].forEach(type => {
+            const sum = todayEntries.filter(e => e.type === type).reduce((s,e) => s + e.amount, 0);
+            if(sum > 0) wizData.fields[type] = sum;
+        });
+        // Recalc from detail lists for accuracy
+        if(wizData.debtsList.length) wizData.fields.debts = wizData.debtsList.reduce((s,d) => s+d.amount, 0);
+        if(wizData.expensesList.length) wizData.fields.expenses = wizData.expensesList.reduce((s,e) => s+e.amount, 0);
+        if(wizData.withdrawList.length) wizData.fields.withdrawals = wizData.withdrawList.reduce((s,w) => s+w.amount, 0);
+    }
+
     wizStep = 1; /* skip manager step - auto-filled from login */
     renderWizStep();
     $('#wizardOverlay').classList.remove('hidden');
@@ -330,9 +517,13 @@ function renderWizStep(){
     else if(fk === 'withdrawals') extra = buildWithdrawEntryUI();
     else if(fk === 'expenses') extra = buildExpenseEntryUI();
 
+    const autoFilled = wizData.fields[fk] > 0 && getTodayLogs().some(e => e.type === fk);
+    const autoTag = autoFilled ? `<div class="auto-fill-tag"><i class="ri-magic-line"></i> تم التعبئة من السجل</div>` : '';
+
     body.innerHTML = `
     <div class="wiz-cashier-label" style="color:${c.color}"><i class="${c.icon}"></i> ${c.label}</div>
     <div class="wiz-label"><i class="${field.icon}"></i> ${field.label} <span style="font-size:.75rem;color:var(--text3)">(بالآلاف)</span></div>
+    ${autoTag}
     <input type="number" class="wiz-input" id="wizInput" inputmode="decimal" value="${toK(wizData.fields[fk])||''}" placeholder="0">
     ${extra}`;
     setTimeout(()=>{
@@ -962,7 +1153,14 @@ function handlePopState(e){
         return;
     }
 
-    // 3. الصفحة الرئيسية - اعرض تأكيد الخروج
+    // 3. صفحة السجل - ارجع للرئيسية
+    if(currentPage === 'log'){
+        showPage('home');
+        history.pushState({page:'home'}, '', '');
+        return;
+    }
+
+    // 4. الصفحة الرئيسية - اعرض تأكيد الخروج
     if(!$('#app').classList.contains('hidden')){
         showExitConfirm();
         // أعد push الحالة حتى لا يخرج المستخدم
@@ -970,7 +1168,7 @@ function handlePopState(e){
         return;
     }
 
-    // 4. إذا رجع إلى صفحة الـ login - لا تفعل شيء
+    // 5. إذا رجع إلى صفحة الـ login - لا تفعل شيء
     if(!$('#loginOverlay').classList.contains('hidden')){
         history.pushState({page:'login'}, '', '');
         return;
